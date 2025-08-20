@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QLineEdit,
+    QWidget,
 )
 from PySide6.QtGui import QAction
 
@@ -26,6 +27,7 @@ from queue_manager import QueueManager, DownloadItem, DownloadStatus
 
 class HistoryDialog(QDialog):
     item_selected = Signal(DownloadItem)
+    redownload_requested = Signal(DownloadItem)
     
     def __init__(self, queue_manager: QueueManager, parent=None):
         super().__init__(parent)
@@ -183,6 +185,11 @@ class HistoryDialog(QDialog):
             actions_layout = QHBoxLayout(actions_widget)
             actions_layout.setContentsMargins(2, 2, 2, 2)
             
+            # Add re-download button for all items
+            redownload_btn = QPushButton("Re-download")
+            redownload_btn.clicked.connect(lambda checked, r=row: self.redownload_item(r))
+            actions_layout.addWidget(redownload_btn)
+            
             if item.status == DownloadStatus.FAILED:
                 retry_btn = QPushButton("Retry")
                 retry_btn.clicked.connect(lambda checked, r=row: self.retry_item(r))
@@ -211,6 +218,11 @@ class HistoryDialog(QDialog):
             return
         
         menu = QMenu(self)
+        
+        # Add re-download action for all items
+        redownload_action = QAction("Re-download", self)
+        redownload_action.triggered.connect(lambda: self.redownload_item_by_item(download_item))
+        menu.addAction(redownload_action)
         
         # Add actions based on status
         if download_item.status == DownloadStatus.FAILED:
@@ -241,6 +253,18 @@ class HistoryDialog(QDialog):
             item = items[row]
             if item.status == DownloadStatus.FAILED:
                 self.retry_item_by_item(item)
+    
+    def redownload_item(self, row: int):
+        """Re-download item by row index"""
+        items = self.queue_manager.get_history()
+        if 0 <= row < len(items):
+            item = items[row]
+            self.redownload_item_by_item(item)
+    
+    def redownload_item_by_item(self, item: DownloadItem):
+        """Re-download specific item"""
+        self.redownload_requested.emit(item)
+        self.close()
     
     def retry_item_by_item(self, item: DownloadItem):
         """Retry specific failed item"""

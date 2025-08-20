@@ -30,7 +30,6 @@ from custom_command_dialog import CustomCommandDialog
 from download_settings_dialog import DownloadSettingsDialog
 from ytdl_worker import PipUpdateWorker
 from queue_manager import QueueManager, DownloadItem, DownloadStatus
-from queue_dialog import QueueDialog
 from history_dialog import HistoryDialog
 from loading_widget import LoadingButton
 
@@ -114,17 +113,17 @@ class MainWindow(QMainWindow):
         self.output_label.setObjectName("MutedLabel")
 
         self.settings_btn = QPushButton("Settings & Options")
-        self.add_to_queue_btn = QPushButton("Add to Queue")
+        self.history_btn = QPushButton("View History")
         self.download_btn = LoadingButton("Download")
         self.download_btn.setObjectName("AccentButton")
         self.download_btn.setFixedHeight(40)
-        self.add_to_queue_btn.setFixedHeight(40)
+        self.history_btn.setFixedHeight(40)
         self.settings_btn.setFixedHeight(40)
 
         footer.addWidget(self.output_label)
         footer.addStretch()
         footer.addWidget(self.settings_btn)
-        footer.addWidget(self.add_to_queue_btn)
+        footer.addWidget(self.history_btn)
         footer.addWidget(self.download_btn)
         self._layout.addLayout(footer)
 
@@ -141,7 +140,7 @@ class MainWindow(QMainWindow):
         self.url_edit.returnPressed.connect(self._analyze)
         self.analyze_btn.clicked.connect(self._analyze)
         self.download_btn.clicked.connect(self._start_download)
-        self.add_to_queue_btn.clicked.connect(self._add_to_queue)
+        self.history_btn.clicked.connect(self._open_history)
         self.settings_btn.clicked.connect(self._open_settings_menu)
         self.format_combo.currentIndexChanged.connect(self._on_format_selected)
 
@@ -163,9 +162,8 @@ class MainWindow(QMainWindow):
         self.option_save_thumbnail = False
         self.option_save_description = False
 
-        # --- Queue management ---
+        # --- History management ---
         self.queue_manager = QueueManager()
-        self.queue_dialog: Optional[QueueDialog] = None
         self.history_dialog: Optional[HistoryDialog] = None
 
         # --- Setup ---
@@ -175,8 +173,20 @@ class MainWindow(QMainWindow):
         self._update_ui_state(is_idle=True)
 
     def _create_icon(self) -> QIcon:
+        # Try to load the logo from the svgs folder
+        # Try ICO first (better Windows compatibility), then PNG as fallback
+        icon_path = os.path.join(os.path.dirname(__file__), "svgs", "logo.ico")
+        if not os.path.exists(icon_path):
+            icon_path = os.path.join(os.path.dirname(__file__), "svgs", "logo.png")
+        
+        if os.path.exists(icon_path):
+            icon = QIcon(icon_path)
+            if not icon.isNull():
+                return icon
+        
+        # Fallback to a simple colored icon if logo not found
         pixmap = QPixmap(64, 64)
-        pixmap.fill(Qt.transparent)
+        pixmap.fill(Qt.red)  # You can change this color
         return QIcon(pixmap)
 
     def _setup_settings_menu(self) -> None:
@@ -204,9 +214,6 @@ class MainWindow(QMainWindow):
         self.settings_menu.addAction("Download Settings...", self._open_download_settings)
         self.settings_menu.addAction("Custom Command...", self._open_custom_cmd)
         self.settings_menu.addAction("Update yt-dlp...", self._update_ytdlp)
-        self.settings_menu.addSeparator()
-        self.settings_menu.addAction("View Queue...", self._open_queue)
-        self.settings_menu.addAction("View History...", self._open_history)
 
     def _open_settings_menu(self) -> None:
         self.settings_menu.popup(self.settings_btn.mapToGlobal(self.settings_btn.rect().bottomLeft()))
@@ -215,7 +222,6 @@ class MainWindow(QMainWindow):
         self.url_edit.setEnabled(not is_analyzing)
         self.analyze_btn.setEnabled(not is_analyzing)
         self.download_btn.setEnabled(has_info and not is_analyzing)
-        self.add_to_queue_btn.setEnabled(has_info and not is_analyzing)
         self.settings_btn.setEnabled(not is_analyzing)
         self.format_combo.setEnabled(has_info)
 
@@ -267,6 +273,11 @@ class MainWindow(QMainWindow):
         self.available_subtitles = subs
         self._update_ui_state(has_info=True)
         self._update_option_states()
+        
+        # Apply history settings if this was a re-download request
+        if hasattr(self, '_pending_history_item'):
+            self._apply_history_settings(self._pending_history_item)
+            delattr(self, '_pending_history_item')
 
     def _on_info_error(self, message: str) -> None:
         self._update_ui_state(is_idle=True)
@@ -492,6 +503,29 @@ class MainWindow(QMainWindow):
         self._update_ui_state(has_info=True)
         self.progress.setValue(100 if ok else 0)
         self.progress.setFormat("Done!" if ok else "Failed")
+        
+        # Save to history
+        if self.last_info:
+            url = self.url_edit.text().strip()
+            ydl_opts = self._build_ydl_opts()
+            status = DownloadStatus.COMPLETED if ok else DownloadStatus.FAILED
+            
+            item = DownloadItem(
+                url=url, 
+                title=self.last_info.get("title", "Unknown"),
+                uploader=self.last_info.get("uploader", "Unknown"),
+                duration=self.last_info.get("duration"),
+                thumbnail_url=self._get_thumbnail_url(),
+                selected_format=self.selected_format,
+                output_path=ydl_opts.get("outtmpl", {}).get("default", ""),
+                options=ydl_opts, 
+                status=status,
+                added_at=datetime.now(),
+                completed_at=datetime.now(),
+                error_message=message if not ok else None
+            )
+            self.queue_manager.add_to_history(item)
+        
         if ok:
             QMessageBox.information(self, "Download Complete", message)
         else:
@@ -555,34 +589,44 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.critical(self, "Update Failed", msg)
     
-    def _add_to_queue(self) -> None:
-        if not self.last_info:
-            QMessageBox.warning(self, "No Video", "Please analyze a video first.")
-            return
-        url = self.url_edit.text().strip()
-        ydl_opts = self._build_ydl_opts()
-        item = DownloadItem(
-            url=url, title=self.last_info.get("title", "Unknown"),
-            uploader=self.last_info.get("uploader", "Unknown"),
-            duration=self.last_info.get("duration"),
-            thumbnail_url=self._get_thumbnail_url(),
-            selected_format=self.selected_format,
-            output_path=ydl_opts.get("outtmpl", {}).get("default", ""),
-            options=ydl_opts, status=DownloadStatus.PENDING,
-            added_at=datetime.now()
-        )
-        self.queue_manager.add_to_queue(item)
-        QMessageBox.information(self, "Added to Queue", f"'{item.title}' added to download queue.")
-    
-    def _open_queue(self) -> None:
-        if not self.queue_dialog:
-            self.queue_dialog = QueueDialog(self.queue_manager, self)
-        self.queue_dialog.show()
-    
     def _open_history(self) -> None:
         if not self.history_dialog:
             self.history_dialog = HistoryDialog(self.queue_manager, self)
+            self.history_dialog.redownload_requested.connect(self._redownload_from_history)
         self.history_dialog.show()
+    
+    def _redownload_from_history(self, item: DownloadItem) -> None:
+        """Re-download a video from history"""
+        # Set the URL and analyze
+        self.url_edit.setText(item.url)
+        self._analyze()
+        
+        # Store the history item to apply settings after analysis
+        self._pending_history_item = item
+    
+    def _apply_history_settings(self, item: DownloadItem) -> None:
+        """Apply settings from a history item"""
+        # Set the format if it exists
+        if item.selected_format:
+            # Find the format in the combo box
+            for i in range(self.format_combo.count()):
+                fmt_data = self.format_combo.itemData(i)
+                if fmt_data and fmt_data.get("format_id") == item.selected_format:
+                    self.format_combo.setCurrentIndex(i)
+                    break
+        
+        # Apply subtitle settings if any
+        if item.options.get("writesubtitles"):
+            self.selected_subtitles = item.options.get("subtitleslangs", ["en"])
+        
+        # Apply other options
+        self.option_embed_subs = item.options.get("embedsubtitles", False)
+        self.option_sponsorblock = "sponsorblock_mark" in item.options
+        self.option_save_thumbnail = item.options.get("writethumbnail", False)
+        self.option_save_description = item.options.get("writedescription", False)
+        
+        # Update option states
+        self._update_option_states()
     
     def _get_thumbnail_url(self) -> Optional[str]:
         if not self.last_info: return None
