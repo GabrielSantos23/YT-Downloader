@@ -356,3 +356,4 @@ class HistoryDialog(QDialog):
         """Clean up when dialog is closed"""
         self.refresh_timer.stop()
         super().closeEvent(event)
+

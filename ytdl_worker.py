@@ -24,10 +24,13 @@ def list_formats(info: Dict[str, Any]) -> List[Dict[str, Any]]:
             {
                 "format_id": f.get("format_id"),
                 "ext": f.get("ext"),
+                "width": f.get("width"),
+                "height": f.get("height"),
                 "resolution": f.get("resolution") or f"{f.get('width','?')}x{f.get('height','?')}",
                 "fps": f.get("fps"),
                 "vcodec": f.get("vcodec"),
                 "acodec": f.get("acodec"),
+                "abr": f.get("abr"),
                 "filesize": f.get("filesize"),
                 "filesize_approx": f.get("filesize_approx"),
                 "format_note": f.get("format_note"),

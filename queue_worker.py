@@ -80,3 +80,4 @@ class QueueWorker(QThread):
                 break
         
         self.queue_finished.emit()
+

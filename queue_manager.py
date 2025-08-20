@@ -196,3 +196,4 @@ class QueueManager:
         )
         self.add_to_queue(new_item)
         return new_item
+

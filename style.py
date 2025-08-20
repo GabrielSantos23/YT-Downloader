@@ -32,7 +32,7 @@ def dark_stylesheet() -> str:
         }
 
         QLabel#ThumbnailLabel {
-            background-color: #262626; /* --card */
+            background-color: transparent;
             border: 1px solid #404040; /* --border */
             border-radius: 8px;
             color: #a3a3a3; /* --muted-foreground */
@@ -46,25 +46,12 @@ def dark_stylesheet() -> str:
             padding: 8px;
             color: #e5e5e5; /* --secondary-foreground */
         }
-        QLineEdit:focus, QComboBox:focus {
-            border-color: #f59e0b; /* --ring */
-        }
+
+
         
-        QComboBox::drop-down {
-            border: none;
-        }
+
         
-        QComboBox::down-arrow {
-            /* A proper icon should be used here */
-            /* For now, it will use the system default arrow */
-        }
-        
-        QComboBox QAbstractItemView {
-            background-color: #262626; /* --popover */
-            border: 1px solid #404040; /* --border */
-            selection-background-color: #5b0d0b; /* --accent */
-            selection-color: #fde68a; /* --accent-foreground */
-        }
+
 
         /* --- Buttons --- */
         QPushButton {
@@ -143,4 +130,98 @@ def dark_stylesheet() -> str:
             background-color: #262626; /* --card */
             border-radius: 8px;
         }
+        
+        /* Ensure all content inside ContentBox inherits the background */
+        QWidget#ContentBox * {
+            background-color: transparent;
+        }
+        
+        /* Specific styling for content area elements */
+        QWidget#ContentBox QLabel {
+            background-color: transparent;
+        }
+        
+  
+
+        QComboBox {
+            background-color: #262626; /* Keep this for contrast against the dark background */
+            border: 1px solid #404040;
+            border-radius: 6px;
+            padding: 6px 10px;
+            color: #e5e5e5;
+            font-size: 10pt;
+            min-height: 16px;
+            max-height: 35px;
+        }
+
+        QComboBox:hover {
+            border-color: #525252;
+            background-color: #2a2a2a;
+        }
+
+        QComboBox:focus {
+            border-color: #db3c24;
+            outline: none;
+        }
+
+        QComboBox::drop-down {
+            border: none;
+            width: 25px;
+            background: transparent;
+        }
+
+        QComboBox::down-arrow {
+            image: none;
+            border: 2px solid #a3a3a3;
+            width: 6px;
+            height: 6px;
+            border-top: none;
+            border-right: none;
+            transform: rotate(-45deg);
+            margin-top: -3px;
+        }
+
+        QComboBox::down-arrow:hover {
+            border-color: #e5e5e5;
+        }
+
+        QComboBox QAbstractItemView {
+            background-color: #171717; /* Same as main app background */
+            border: 1px solid #404040;
+            border-radius: 6px;
+            padding: 4px;
+            selection-background-color: #db3c24;
+            selection-color: #ffffff;
+            outline: none;
+            max-height: 200px;
+        }
+
+        QComboBox QAbstractItemView::item {
+            padding: 6px 10px;
+            border-radius: 4px;
+            margin: 1px 0;
+            min-height: 16px;
+            background-color: transparent;
+        }
+
+        QComboBox QAbstractItemView::item:hover {
+            background-color: #404040;
+            color: #ffffff;
+        }
+
+        QComboBox QAbstractItemView::item:selected {
+            background-color: #db3c24;
+            color: #ffffff;
+        }
+
+        QComboBox QAbstractItemView::item:disabled {
+            color: #666666;
+            background-color: #1f1f1f;
+            font-weight: bold;
+            font-size: 9pt;
+            border-bottom: 1px solid #333333;
+            margin: 2px 0;
+            padding: 4px 8px;
+        }
+
     """

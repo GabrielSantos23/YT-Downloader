@@ -3,8 +3,8 @@ import os
 import shutil
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QAction, QPixmap, QIcon
+from PySide6.QtCore import Qt, QSize, QThread
+from PySide6.QtGui import QAction, QPixmap, QIcon, QFont # <--- IMPORT ADDED HERE
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from ytdl_worker import YtDlWorker, list_formats, InfoWorker, ThumbWorker
-from style import dark_stylesheet  # Updated stylesheet
+from style import dark_stylesheet
 from subtitle_dialog import SubtitleDialog
 from custom_command_dialog import CustomCommandDialog
 from download_settings_dialog import DownloadSettingsDialog
@@ -41,7 +41,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("YT Downloader")
         self.resize(1024, 720)
         self.setStyleSheet(dark_stylesheet())
-        self.setWindowIcon(self._create_icon()) # Simple app icon
+        self.setWindowIcon(self._create_icon())
 
         self._central = QWidget()
         self.setCentralWidget(self._central)
@@ -57,7 +57,7 @@ class MainWindow(QMainWindow):
         self.url_edit.setFixedHeight(40)
         self.analyze_btn = LoadingButton("Search")
         self.analyze_btn.setFixedSize(100, 40)
-        self.analyze_btn.setObjectName("AccentButton") # For special styling
+        self.analyze_btn.setObjectName("AccentButton")
         header.addWidget(self.url_edit)
         header.addWidget(self.analyze_btn)
         self._layout.addLayout(header)
@@ -68,6 +68,7 @@ class MainWindow(QMainWindow):
         content_layout = QHBoxLayout(content_box)
         content_layout.setContentsMargins(20, 20, 20, 20)
         content_layout.setSpacing(20)
+        content_layout.setAlignment(Qt.AlignTop)
 
         self.thumb_label = QLabel()
         self.thumb_label.setFixedSize(320, 180)
@@ -77,13 +78,14 @@ class MainWindow(QMainWindow):
 
         meta_vbox = QVBoxLayout()
         meta_vbox.setSpacing(10)
+        meta_vbox.setAlignment(Qt.AlignTop)
         self.meta_title = QLabel("Video Title")
         self.meta_title.setObjectName("TitleLabel")
         self.meta_title.setWordWrap(True)
-        
+
         self.meta_uploader = QLabel("Channel Name")
         self.meta_uploader.setObjectName("UploaderLabel")
-        
+
         info_hbox = QHBoxLayout()
         self.meta_duration = QLabel("00:00")
         self.meta_views = QLabel("0 views")
@@ -93,7 +95,7 @@ class MainWindow(QMainWindow):
 
         self.format_combo = QComboBox()
         self.format_combo.setFixedHeight(35)
-        
+
         meta_vbox.addWidget(self.meta_title)
         meta_vbox.addWidget(self.meta_uploader)
         meta_vbox.addLayout(info_hbox)
@@ -102,15 +104,15 @@ class MainWindow(QMainWindow):
         meta_vbox.addWidget(self.format_combo)
         meta_vbox.addStretch()
 
-        content_layout.addWidget(self.thumb_label)
+        content_layout.addWidget(self.thumb_label, 0, Qt.AlignTop)
         content_layout.addLayout(meta_vbox)
-        self._layout.addWidget(content_box, 1) # Make it stretch
+        self._layout.addWidget(content_box, 1)
 
         # --- Footer: Output path and action buttons ---
         footer = QHBoxLayout()
         self.output_label = QLabel("Output: <not set>")
         self.output_label.setObjectName("MutedLabel")
-        
+
         self.settings_btn = QPushButton("Settings & Options")
         self.add_to_queue_btn = QPushButton("Add to Queue")
         self.download_btn = LoadingButton("Download")
@@ -132,7 +134,7 @@ class MainWindow(QMainWindow):
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
         self.progress.setFixedHeight(10)
-        self.progress.setFormat("") # Hide text initially
+        self.progress.setFormat("")
         self._layout.addWidget(self.progress)
 
         # --- Signals ---
@@ -142,7 +144,7 @@ class MainWindow(QMainWindow):
         self.add_to_queue_btn.clicked.connect(self._add_to_queue)
         self.settings_btn.clicked.connect(self._open_settings_menu)
         self.format_combo.currentIndexChanged.connect(self._on_format_selected)
-        
+
         # --- State ---
         self.output_dir: Optional[str] = None
         self.last_info: Optional[Dict[str, Any]] = None
@@ -154,8 +156,8 @@ class MainWindow(QMainWindow):
         self._ffmpeg_warned: bool = False
         self.custom_overrides: Dict[str, str] = {}
         self.settings_overrides: Dict[str, str] = {"concurrent": "4"}
-        
-        # --- Options State (moved from checkboxes) ---
+
+        # --- Options State ---
         self.option_embed_subs = False
         self.option_sponsorblock = False
         self.option_save_thumbnail = False
@@ -173,35 +175,25 @@ class MainWindow(QMainWindow):
         self._update_ui_state(is_idle=True)
 
     def _create_icon(self) -> QIcon:
-        """Creates a simple QIcon for the window."""
         pixmap = QPixmap(64, 64)
         pixmap.fill(Qt.transparent)
-        # In a real app, you'd load from a file: QIcon("path/to/icon.png")
-        # For this example, we'll just return an empty one.
         return QIcon(pixmap)
 
     def _setup_settings_menu(self) -> None:
-        """Creates the QMenu for the settings button."""
         self.settings_menu = QMenu(self)
-        
-        # --- File Actions ---
         self.settings_menu.addAction("Choose Output...", self._choose_output)
         self.settings_menu.addAction("Set FFmpeg Location...", self._choose_ffmpeg)
         self.settings_menu.addSeparator()
 
-        # --- Download Options (formerly checkboxes) ---
         self.action_embed_subs = QAction("Merge Subtitles", self, checkable=True)
         self.action_embed_subs.toggled.connect(lambda checked: setattr(self, 'option_embed_subs', checked))
-        
         self.action_sponsorblock = QAction("Remove Sponsor Segments", self, checkable=True)
         self.action_sponsorblock.toggled.connect(lambda checked: setattr(self, 'option_sponsorblock', checked))
-        
         self.action_save_thumb = QAction("Save Thumbnail", self, checkable=True)
         self.action_save_thumb.toggled.connect(lambda checked: setattr(self, 'option_save_thumbnail', checked))
-        
         self.action_save_desc = QAction("Save Description", self, checkable=True)
         self.action_save_desc.toggled.connect(lambda checked: setattr(self, 'option_save_description', checked))
-        
+
         self.settings_menu.addAction(self.action_embed_subs)
         self.settings_menu.addAction(self.action_sponsorblock)
         self.settings_menu.addAction(self.action_save_thumb)
@@ -209,7 +201,6 @@ class MainWindow(QMainWindow):
         self.settings_menu.addAction("Select Subtitles...", self._pick_subtitles)
         self.settings_menu.addSeparator()
 
-        # --- Tools & Advanced ---
         self.settings_menu.addAction("Download Settings...", self._open_download_settings)
         self.settings_menu.addAction("Custom Command...", self._open_custom_cmd)
         self.settings_menu.addAction("Update yt-dlp...", self._update_ytdlp)
@@ -218,11 +209,9 @@ class MainWindow(QMainWindow):
         self.settings_menu.addAction("View History...", self._open_history)
 
     def _open_settings_menu(self) -> None:
-        """Shows the settings menu under the button."""
         self.settings_menu.popup(self.settings_btn.mapToGlobal(self.settings_btn.rect().bottomLeft()))
 
     def _update_ui_state(self, is_analyzing: bool = False, is_idle: bool = False, has_info: bool = False):
-        """Centralized method to control widget enabled/disabled states."""
         self.url_edit.setEnabled(not is_analyzing)
         self.analyze_btn.setEnabled(not is_analyzing)
         self.download_btn.setEnabled(has_info and not is_analyzing)
@@ -263,7 +252,7 @@ class MainWindow(QMainWindow):
         if not url:
             QMessageBox.warning(self, "Invalid URL", "Please paste a valid video URL.")
             return
-        
+
         self._update_ui_state(is_analyzing=True)
         self._info_worker = InfoWorker(url)
         self._info_worker.info.connect(self._on_info_ready)
@@ -276,7 +265,6 @@ class MainWindow(QMainWindow):
         self._populate_formats(list_formats(info))
         subs = sorted(list((info.get("subtitles") or {}).keys()))
         self.available_subtitles = subs
-        
         self._update_ui_state(has_info=True)
         self._update_option_states()
 
@@ -287,17 +275,14 @@ class MainWindow(QMainWindow):
     def _populate_metadata(self, info: Dict[str, Any]) -> None:
         self.meta_title.setText(info.get("title") or "No Title")
         self.meta_uploader.setText(info.get("uploader") or "Unknown Channel")
-        
         view_count = info.get("view_count")
         self.meta_views.setText(f"{view_count:,} views" if view_count else "Unknown views")
-        
         duration = info.get("duration")
         if duration is not None:
             mins, secs = divmod(int(duration), 60)
             self.meta_duration.setText(f"{mins:02d}:{secs:02d}")
         else:
             self.meta_duration.setText("--:--")
-            
         thumb_url = self._get_thumbnail_url()
         if thumb_url:
             self._thumb_worker = ThumbWorker(thumb_url)
@@ -311,26 +296,99 @@ class MainWindow(QMainWindow):
                 pix.scaled(self.thumb_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
             )
 
+
+    def _format_size(self, size_bytes: Optional[int]) -> str:
+        """Formats bytes into KB, MB, GB, etc."""
+        if size_bytes is None:
+            return ""
+        if size_bytes < 1024:
+            return f"{size_bytes} B"
+        for unit in ["", "K", "M", "G", "T"]:
+            if abs(size_bytes) < 1024.0:
+                return f"{size_bytes:3.1f}{unit}B"
+            size_bytes /= 1024.0
+        return f"{size_bytes:.1f}PB"
+
     def _populate_formats(self, formats: List[Dict[str, Any]]) -> None:
         self.format_combo.clear()
         
-        # Filter and sort formats
-        video_formats = [f for f in formats if f.get("vcodec") != "none"]
-        audio_formats = [f for f in formats if f.get("acodec") != "none" and f.get("vcodec") == "none"]
+        font = QFont("Inter", 10)  
+        font.setWeight(QFont.Normal)
+        self.format_combo.view().setFont(font)
         
-        # Add video formats first, sorted by resolution
-        for f in sorted(video_formats, key=lambda x: x.get("height", 0), reverse=True):
-            label = f"{f.get('format_note', '')} ({f.get('ext')})"
-            self.format_combo.addItem(label, userData=f)
+        self.format_combo.setMaxVisibleItems(8)
+        self.format_combo.view().setAlternatingRowColors(False)  
+        
+        # Sort formats by quality
+        combined_formats = sorted(
+            [f for f in formats if f.get("vcodec") != "none" and f.get("acodec") != "none"],
+            key=lambda x: x.get("height") or 0, reverse=True
+        )
+        video_only_formats = sorted(
+            [f for f in formats if f.get("vcodec") != "none" and f.get("acodec") == "none"],
+            key=lambda x: x.get("height") or 0, reverse=True
+        )
+        audio_only_formats = sorted(
+            [f for f in formats if f.get("acodec") != "none" and f.get("vcodec") == "none"],
+            key=lambda x: x.get("abr") or 0, reverse=True
+        )
+
+        def add_header(text: str):
+            self.format_combo.addItem(text)
+            item = self.format_combo.model().item(self.format_combo.count() - 1)
+            item.setEnabled(False)
+
+        def format_video_label(f: Dict[str, Any]) -> str:
+            height = f.get("height", 0)
+            fps = int(f.get("fps") or 0)
+            vcodec = (f.get("vcodec") or "N/A").split(".")[0]
+            acodec = (f.get("acodec") or "none").split(".")[0]
+            size = self._format_size(f.get("filesize") or f.get("filesize_approx"))
             
-        # Add a separator
-        if video_formats and audio_formats:
-            self.format_combo.insertSeparator(len(video_formats))
+            resolution = f"{height}p"
+            if fps > 30:
+                resolution += f" • {fps}fps"
+                
+            codecs = vcodec.upper()
+            if acodec != "none":
+                codecs += f" + {acodec.upper()}"
+                
+            size_text = f" • {size}" if size else ""
             
-        # Add audio formats, sorted by bitrate
-        for f in sorted(audio_formats, key=lambda x: x.get("abr", 0), reverse=True):
-            label = f"Audio Only - {f.get('format_note', '')} ({f.get('ext')})"
-            self.format_combo.addItem(label, userData=f)
+            return f"  {resolution} • {codecs}{size_text}"
+
+        def format_audio_label(f: Dict[str, Any]) -> str:
+            abr = int(f.get("abr") or 0)
+            acodec = (f.get("acodec") or "N/A").split(".")[0]
+            ext = f.get("ext", "")
+            size = self._format_size(f.get("filesize") or f.get("filesize_approx"))
+            
+            quality = f"{abr} kbps" if abr else "Unknown quality"
+            codec_info = f"{acodec.upper()}"
+            if ext:
+                codec_info += f" ({ext.upper()})"
+                
+            size_text = f" • {size}" if size else ""
+            
+            return f"  {quality} • {codec_info}{size_text}"
+
+        if combined_formats:
+            add_header("━━━ VIDEO + AUDIO ━━━")
+            for f in combined_formats:
+                self.format_combo.addItem(format_video_label(f), userData=f)
+
+        if video_only_formats:
+            add_header("━━━ VIDEO ONLY ━━━")
+            for f in video_only_formats:
+                self.format_combo.addItem(format_video_label(f), userData=f)
+        
+        if audio_only_formats:
+            add_header("━━━ AUDIO ONLY ━━━")
+            for f in audio_only_formats:
+                self.format_combo.addItem(format_audio_label(f), userData=f)
+
+        if self.format_combo.count() > 1:
+            self.format_combo.setCurrentIndex(1)
 
     def _on_format_selected(self, index: int):
         if index == -1:
@@ -346,7 +404,6 @@ class MainWindow(QMainWindow):
         vcodec = fmt_data.get("vcodec")
         acodec = fmt_data.get("acodec")
         
-        # If format has video but no audio, automatically select best audio to merge
         if vcodec != "none" and acodec == "none":
             self.selected_format = f"{format_id}+bestaudio/best"
         else:
@@ -354,12 +411,10 @@ class MainWindow(QMainWindow):
 
     def _build_ydl_opts(self) -> Dict[str, Any]:
         if not self.selected_format:
-            # Default to best if nothing is selected
             format_sel = "bestvideo+bestaudio/best"
         else:
             format_sel = self.selected_format
 
-        # Build output path: Downloads/<Title>/<Title>.<ext>
         base_dir = self.output_dir or self._downloads_dir()
         outtmpl_path = os.path.join(base_dir, "%(title)s", "%(title)s.%(ext)s")
 
@@ -376,7 +431,6 @@ class MainWindow(QMainWindow):
             "writedescription": self.option_save_description,
         }
         
-        # Special handling for audio-only formats
         selected_data = self.format_combo.currentData()
         if selected_data and selected_data.get("vcodec") == "none":
              ydl_opts["postprocessors"].append({
@@ -385,16 +439,11 @@ class MainWindow(QMainWindow):
                 "preferredquality": "0",
             })
 
-        # SponsorBlock
         if self.option_sponsorblock:
             sponsor_categories = ["sponsor", "selfpromo", "interaction", "intro", "outro", "preview", "music_offtopic"]
             ydl_opts["sponsorblock_mark"] = sponsor_categories
             ydl_opts["sponsorblock_remove"] = sponsor_categories
 
-        # Custom overrides (from dialogs)
-        # ... (Your existing logic for custom overrides) ...
-
-        # FFmpeg location
         if self.ffmpeg_location:
             ydl_opts["ffmpeg_location"] = self.ffmpeg_location
         
@@ -415,9 +464,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "In Progress", "A download is already running.")
             return
             
-        # Set download button to loading state
         self.download_btn.setLoading(True)
-        self._update_ui_state(is_analyzing=True) # Visually disable UI during download
+        self._update_ui_state(is_analyzing=True)
         self.worker_thread = YtDlWorker(url, ydl_opts)
         self.worker_thread.progress.connect(self._on_progress)
         self.worker_thread.error.connect(self._on_error)
@@ -433,7 +481,7 @@ class MainWindow(QMainWindow):
 
     def _on_error(self, message: str) -> None:
         self.download_btn.setLoading(False)
-        self._update_ui_state(has_info=True) # Re-enable UI
+        self._update_ui_state(has_info=True)
         self.progress.setValue(0)
         self.progress.setFormat("Error")
         QMessageBox.critical(self, "Download error", message)
@@ -441,7 +489,7 @@ class MainWindow(QMainWindow):
 
     def _on_done(self, ok: bool, message: str) -> None:
         self.download_btn.setLoading(False)
-        self._update_ui_state(has_info=True) # Re-enable UI
+        self._update_ui_state(has_info=True)
         self.progress.setValue(100 if ok else 0)
         self.progress.setFormat("Done!" if ok else "Failed")
         if ok:
@@ -466,7 +514,6 @@ class MainWindow(QMainWindow):
             self.action_embed_subs.setToolTip("")
 
     def _detect_ffmpeg(self) -> Optional[str]:
-        # (This function remains the same as your original)
         env = os.environ.get("FFMPEG_LOCATION")
         if env and os.path.exists(env): return env
         exe = shutil.which("ffmpeg")
@@ -509,7 +556,6 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Update Failed", msg)
     
     def _add_to_queue(self) -> None:
-        # (This function remains the same as your original)
         if not self.last_info:
             QMessageBox.warning(self, "No Video", "Please analyze a video first.")
             return
@@ -544,4 +590,3 @@ class MainWindow(QMainWindow):
         if thumbs:
             return sorted(thumbs, key=lambda t: t.get("width", 0))[-1].get("url")
         return None
-
